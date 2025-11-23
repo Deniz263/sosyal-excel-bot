@@ -50,15 +50,28 @@ module.exports = async (req, res) => {
 };
 
 // -------- Instagram RapidAPI entegrasyonu --------
+// -------- Instagram RapidAPI entegrasyonu --------
 
 async function fetchInstagramData(userOrUrl) {
-  // RapidAPI endpoint'inin parametre adı dokümanda nasıl yazıyorsa onu kullan
-  // Bu API'de genelde: user_id_or_username_or_url
+  // 1) Girdiği metinden kullanıcı adını ayıkla
+  let query = (userOrUrl || "").trim();
+
+  // Eğer tam profil linki geldiyse (https://www.instagram.com/instagram/ gibi)
+  if (query.includes("instagram.com")) {
+    const match = query.match(/instagram\.com\/([^\/\?\s]+)/i);
+    if (match && match[1]) {
+      query = match[1]; // sadece "instagram" kısmı
+    }
+  }
+
+  // 2) RapidAPI isteği
   const options = {
     method: "GET",
-    url: process.env.INSTAGRAM_API_URL, // Örn: https://instagram-scraper-stable-api.p.rapidapi.com/user_posts
+    url: process.env.INSTAGRAM_API_URL,
     params: {
-      user_id_or_username_or_url: userOrUrl,
+      // API'nin hangi ismi kullandığından emin değilsek ikisini de gönderiyoruz
+      user_id_or_username_or_url: query,
+      username_or_id_or_url: query,
     },
     headers: {
       "X-RapidAPI-Key": process.env.RAPIDAPI_KEY,
@@ -67,16 +80,20 @@ async function fetchInstagramData(userOrUrl) {
   };
 
   const response = await axios.request(options);
-  const data = response.data;
+  const data = response.data || {};
 
-  const username = data.user_data?.username || "";
+  const username = data.user_data?.username || query;
 
-  // Senin gönderdiğin JSON'a göre:
-  // data.user_posts = [ { node: { code, image_versions2: { candidates: [ { url }, ... ] } } }, ... ]
-  const rows = (data.user_posts || []).map((item) => {
+  // Beklediğimiz yapı:
+  // data.user_posts = [ { node: { code, image_versions2: { candidates: [ { url } ] } } }, ... ]
+  const postsArray = data.user_posts || [];
+
+  const rows = postsArray.map((item) => {
     const node = item.node || {};
     const img = node.image_versions2?.candidates?.[0]?.url || "";
-    const postUrl = `https://www.instagram.com/p/${node.code}/`;
+    const postUrl = node.code
+      ? `https://www.instagram.com/p/${node.code}/`
+      : "";
 
     return {
       platform: "instagram",
